@@ -1,0 +1,13 @@
+import {test,beforeEach} from 'node:test';
+import assert from 'node:assert/strict';
+import {recipeRepository as repo} from '../dist/js/repository.js';
+import {seedRecipes} from '../dist/js/data.js';
+let storage;
+beforeEach(()=>{storage=new Map();globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)};});
+test('initializes examples only once; empty collection remains empty',()=>{assert.equal(repo.list().length,6);repo.save([]);assert.deepEqual(repo.list(),[]);});
+test('creates, updates, favorites and removes a recipe',()=>{const r={...structuredClone(seedRecipes[0]),id:'test',title:'Мій рецепт'};repo.upsert(r);assert.equal(repo.get('test').title,'Мій рецепт');repo.upsert({...r,title:'Новий заголовок'});assert.equal(repo.get('test').title,'Новий заголовок');assert.equal(repo.toggleFavorite('test'),false);repo.remove('test');assert.equal(repo.get('test'),undefined);});
+test('invalid imports do not overwrite valid records',()=>{const previous=repo.list();assert.throws(()=>repo.import([{id:'bad',title:'broken'}]));assert.deepEqual(repo.list(),previous);});
+test('import merges by ID and preserves other recipes',()=>{repo.import([{...structuredClone(seedRecipes[0]),title:'Оновлений тост'}]);assert.equal(repo.list().length,6);assert.equal(repo.get('avocado-toast').title,'Оновлений тост');});
+test('reports quota failure without claiming a successful save',()=>{localStorage.setItem=()=>{throw new Error('QuotaExceededError');};assert.throws(()=>repo.upsert(structuredClone(seedRecipes[0])),/Не вдалося зберегти/);});
+test('corrupt storage is not silently reset',()=>{storage.set('smak.recipes.v1','broken');assert.throws(()=>repo.list(),/Не вдалося прочитати/);assert.equal(storage.get('smak.recipes.v1'),'broken');});
+test('rejects unsafe photo URLs in imported recipes',()=>{assert.throws(()=>repo.import([{...structuredClone(seedRecipes[0]),image:'javascript:alert(1)'}]));});
